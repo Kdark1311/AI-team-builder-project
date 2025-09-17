@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import random
-
+import re
 def set_seed(seed=42):
     import random, numpy as _np, torch as _torch
     random.seed(seed)
@@ -63,9 +63,25 @@ def explode_posts(df):
                     "mbti_JP": row["mbti_JP"],
                 })
     return pd.DataFrame(rows)
+#làm sạch văn bản
+def clean_text(text: str) -> str:
+    text = str(text)
 
+    # 1. Bỏ link (http, https, www)
+    text = re.sub(r"http\S+|www\.\S+", " ", text)
+
+    # 2. Bỏ emoji dạng :smile: hoặc :blushed:
+    text = re.sub(r":\w+:", " ", text)
+
+    # 3. Bỏ ký tự không phải chữ, số, dấu câu cơ bản
+    text = re.sub(r"[^a-zA-Z0-9\s.,!?']", " ", text)
+
+    # 4. Gom nhiều khoảng trắng thành 1
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
 # ======================
-# 4. Dataset class cho BERT
+# 6. Dataset class cho BERT
 # ======================
 class MBTIDataset(Dataset):
     def __init__(self, df, tokenizer, max_len=256, augment_fn=None):
