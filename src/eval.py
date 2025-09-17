@@ -1,4 +1,3 @@
-# src/eval.py
 import os
 import torch
 import numpy as np
@@ -11,7 +10,7 @@ from torch.utils.data import DataLoader
 from transformers import BertTokenizer
 
 from models import MBTIModel
-from data import MBTIDataset, load_data, add_binary_columns, explode_posts, split_and_save
+from data import MBTIDataset, load_data, add_binary_columns, explode_posts, split_and_save, set_seed
 
 # ======================
 # Evaluation core
@@ -44,7 +43,7 @@ def evaluate(model, dataloader, device):
 # ======================
 # Visualization
 # ======================
-def plot_confusion_matrices(y_true, y_pred, axes=["IE", "NS", "TF", "JP"]):
+def plot_confusion_matrices(y_true, y_pred, axes=["IE", "NS", "TF", "JP"], save_dir=None):
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
     axs = axs.ravel()
 
@@ -56,10 +55,17 @@ def plot_confusion_matrices(y_true, y_pred, axes=["IE", "NS", "TF", "JP"]):
         ax.set_ylabel("True")
 
     plt.tight_layout()
-    plt.show()
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        path = os.path.join(save_dir, "confusion_matrices.png")
+        plt.savefig(path)
+        plt.close()
+        print(f"Saved confusion matrix to {path}")
+    else:
+        plt.show()
 
 
-def plot_probability_distribution(probs, axes=["IE", "NS", "TF", "JP"]):
+def plot_probability_distribution(probs, axes=["IE", "NS", "TF", "JP"], save_dir=None):
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
     axs = axs.ravel()
 
@@ -70,7 +76,14 @@ def plot_probability_distribution(probs, axes=["IE", "NS", "TF", "JP"]):
         ax.set_ylabel("Count")
 
     plt.tight_layout()
-    plt.show()
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        path = os.path.join(save_dir, "prob_dist.png")
+        plt.savefig(path)
+        plt.close()
+        print(f"Saved probability distribution to {path}")
+    else:
+        plt.show()
 
 
 # ======================
@@ -84,18 +97,20 @@ def error_analysis(test_df, y_true, y_pred, y_probs, axes=["IE", "NS", "TF", "JP
                 errors.append({
                     "index": i,
                     "axis": axis,
-                    "true": y_true[i, j],
-                    "pred": y_pred[i, j],
-                    "prob": y_probs[i, j],
-                    "text": test_df.iloc[i]["posts"][:200] + "..."
+                    "true": int(y_true[i, j]),
+                    "pred": int(y_pred[i, j]),
+                    "prob": float(y_probs[i, j]),
+                    "text": test_df.iloc[i]["post"][:200] + "..."
                 })
 
     errors_df = pd.DataFrame(errors)
+    os.makedirs("reports", exist_ok=True)
     errors_df.to_csv("reports/error_samples.csv", index=False)
     print(f"\n❌ Saved {len(errors_df)} misclassified samples to reports/error_samples.csv")
 
-    print("\n=== Sample Errors ===")
-    print(errors_df.sample(min(n_samples, len(errors_df))))
+    if len(errors_df) > 0:
+        print("\n=== Sample Errors ===")
+        print(errors_df.sample(min(n_samples, len(errors_df))))
 
 
 # ======================
@@ -106,7 +121,7 @@ def robustness_test(df, model, tokenizer, device, batch_size, max_len, axes):
     for n_posts in [50, 10, 1]:
         print(f"\n⚡ Robustness Test: Using {n_posts} posts per user")
         df_sub = df.copy()
-        df_sub["posts"] = df_sub["posts"].apply(lambda x: " ".join(x.split()[:n_posts]))
+        df_sub["post"] = df_sub["post"].apply(lambda x: " ".join(x.split()[:n_posts]))
 
         test_dataset = MBTIDataset(df_sub, tokenizer, max_len=max_len)
         test_loader = DataLoader(test_dataset, batch_size=batch_size)
@@ -120,6 +135,7 @@ def robustness_test(df, model, tokenizer, device, batch_size, max_len, axes):
         results.append(row)
 
     results_df = pd.DataFrame(results)
+    os.makedirs("reports", exist_ok=True)
     results_df.to_csv("reports/robustness.csv", index=False)
     print("\n✅ Robustness results saved to reports/robustness.csv")
     print(results_df)
@@ -130,10 +146,13 @@ def robustness_test(df, model, tokenizer, device, batch_size, max_len, axes):
 # ======================
 def main():
     # Config
+    seed = 42
+    set_seed(seed)
+
     model_name = "bert-base-uncased"
     batch_size = 16
     max_len = 256
-    model_path = "mbti_model.pt"
+    model_path = os.path.join("checkpoints", "mbti_model.pt")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
@@ -142,7 +161,7 @@ def main():
     df = load_data("data/mbti.csv")
     df = add_binary_columns(df)
     df = explode_posts(df)
-    _, _, test_df = split_and_save(df, save_dir="data")
+    _, _, test_df = split_and_save(df, save_dir="data", seed=seed)
 
     tokenizer = BertTokenizer.from_pretrained(model_name)
     test_dataset = MBTIDataset(test_df, tokenizer, max_len=max_len)
@@ -167,6 +186,7 @@ def main():
         print(f"{axis}: Acc={acc:.4f}, Macro-F1={f1:.4f}")
 
     metrics_df = pd.DataFrame(metrics).T
+    os.makedirs("reports", exist_ok=True)
     metrics_df.to_csv("reports/metrics.csv")
     print("\n✅ Metrics saved to reports/metrics.csv")
 
@@ -174,8 +194,8 @@ def main():
     print(classification_report(y_true, y_pred, target_names=axes))
 
     # Visualization
-    plot_confusion_matrices(y_true, y_pred, axes)
-    plot_probability_distribution(y_probs, axes)
+    plot_confusion_matrices(y_true, y_pred, axes, save_dir="reports/figures")
+    plot_probability_distribution(y_probs, axes, save_dir="reports/figures")
 
     # Error analysis
     error_analysis(test_df, y_true, y_pred, y_probs, axes)

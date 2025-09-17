@@ -1,13 +1,11 @@
-# src/train.py
 import os
+import random
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer, AdamW, get_linear_schedule_with_warmup
 
-from data import MBTIDataset
-from models import MBTIModel
-
+from data import MBTIDataset, load_data, add_binary_columns, explode_posts, split_and_save, set_seed
 
 def train_epoch(model, dataloader, optimizer, scheduler, device, loss_fn):
     model.train()
@@ -24,7 +22,8 @@ def train_epoch(model, dataloader, optimizer, scheduler, device, loss_fn):
         loss = loss_fn(outputs, labels)
         loss.backward()
         optimizer.step()
-        scheduler.step()
+        if scheduler is not None:
+            scheduler.step()
 
         total_loss += loss.item()
 
@@ -53,6 +52,9 @@ def main():
     # ======================
     # Config
     # ======================
+    seed = 42
+    set_seed(seed)
+
     model_name = "bert-base-uncased"
     batch_size = 16
     max_len = 256
@@ -60,19 +62,16 @@ def main():
     epochs = 50
     patience = 5  # số epoch chờ cải thiện
     save_path = "mbti_model.pt"
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
 
     # ======================
     # Load data
     # ======================
-    from data import load_data, add_binary_columns, explode_posts, split_and_save
-
     df = load_data("data/mbti.csv")
     df = add_binary_columns(df)
     df = explode_posts(df)
-    train_df, valid_df, _ = split_and_save(df, save_dir="data")
+    train_df, valid_df, _ = split_and_save(df, save_dir="data", seed=seed)
 
     tokenizer = BertTokenizer.from_pretrained(model_name)
 
@@ -85,10 +84,16 @@ def main():
     # ======================
     # Model + Optimizer + Loss
     # ======================
-    model = MBTIModel(model_name=model_name).to(device)
+    model = None
+    try:
+        from models import MBTIModel
+        model = MBTIModel(model_name=model_name).to(device)
+    except Exception as e:
+        print("Error loading model:", e)
+        raise
 
     optimizer = AdamW(model.parameters(), lr=lr)
-    total_steps = len(train_loader) * epochs
+    total_steps = max(1, len(train_loader) * epochs)
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=int(0.1 * total_steps),
@@ -103,6 +108,8 @@ def main():
     best_valid_loss = float("inf")
     patience_counter = 0
 
+    os.makedirs("checkpoints", exist_ok=True)
+
     for epoch in range(epochs):
         train_loss = train_epoch(model, train_loader, optimizer, scheduler, device, loss_fn)
         valid_loss = eval_epoch(model, valid_loader, device, loss_fn)
@@ -115,8 +122,9 @@ def main():
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
             patience_counter = 0
-            torch.save(model.state_dict(), save_path)
-            print(f"✅ Saved best model to {save_path}")
+            path = os.path.join("checkpoints", save_path)
+            torch.save(model.state_dict(), path)
+            print(f"✅ Saved best model to {path}")
         else:
             patience_counter += 1
             print(f"⚠️ No improvement. Patience counter: {patience_counter}/{patience}")

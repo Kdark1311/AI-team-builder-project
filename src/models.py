@@ -1,14 +1,17 @@
-# src/models.py
 import torch
 import torch.nn as nn
 from transformers import BertModel
 
 class MBTIModel(nn.Module):
-    def __init__(self, model_name="bert-base-uncased", dropout=0.3, use_hidden_layer=True):
+    def __init__(self, model_name="bert-base-uncased", dropout=0.3, use_hidden_layer=True, freeze_bert=False):
         super(MBTIModel, self).__init__()
         # Load pretrained BERT
         self.bert = BertModel.from_pretrained(model_name)
         hidden_size = self.bert.config.hidden_size  # thường là 768
+
+        if freeze_bert:
+            for param in self.bert.parameters():
+                param.requires_grad = False
 
         self.dropout = nn.Dropout(dropout)
 
@@ -27,7 +30,8 @@ class MBTIModel(nn.Module):
     def forward(self, input_ids, attention_mask):
         outputs = self.bert(
             input_ids=input_ids,
-            attention_mask=attention_mask
+            attention_mask=attention_mask,
+            return_dict=True
         )
 
         # Lấy CLS embedding trực tiếp (ổn định hơn pooler_output)

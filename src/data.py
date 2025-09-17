@@ -6,6 +6,15 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
+import random
+
+def set_seed(seed=42):
+    import random, numpy as _np, torch as _torch
+    random.seed(seed)
+    _np.random.seed(seed)
+    _torch.manual_seed(seed)
+    if _torch.cuda.is_available():
+        _torch.cuda.manual_seed_all(seed)
 
 # ======================
 # 1. Load & inspect data
@@ -29,6 +38,7 @@ def mbti_to_binary(mbti):
     }
 
 def add_binary_columns(df):
+    df = df.copy()
     df["mbti_IE"] = df["type"].apply(lambda x: mbti_to_binary(x)["IE"])
     df["mbti_NS"] = df["type"].apply(lambda x: mbti_to_binary(x)["NS"])
     df["mbti_TF"] = df["type"].apply(lambda x: mbti_to_binary(x)["TF"])
@@ -41,7 +51,7 @@ def add_binary_columns(df):
 def explode_posts(df):
     rows = []
     for _, row in df.iterrows():
-        posts = str(row["posts"]).replace("|||", "///").split("///")
+        posts = str(row.get("posts", "")).replace("|||", "///").split("///")
         for p in posts:
             p = p.strip()
             if len(p) > 0:
@@ -59,7 +69,7 @@ def explode_posts(df):
 # ======================
 class MBTIDataset(Dataset):
     def __init__(self, df, tokenizer, max_len=256, augment_fn=None):
-        self.df = df
+        self.df = df.reset_index(drop=True)
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.augment_fn = augment_fn
@@ -96,58 +106,68 @@ class MBTIDataset(Dataset):
 # ======================
 # 5. Visualization helpers
 # ======================
-def plot_distribution(df, col="type"):
+def plot_distribution(df, col="type", save_path=None):
     plt.figure(figsize=(10,5))
     sns.countplot(data=df, x=col, order=df[col].value_counts().index)
     plt.xticks(rotation=90)
     plt.title(f"Distribution of {col}")
-    plt.show()
+    if save_path:
+        plt.tight_layout()
+        plt.savefig(save_path)
+        plt.close()
+    else:
+        plt.tight_layout()
+        plt.show()
 
 # ======================
-# 6. Chia dữ liệu 70/20/10 và lưu ra file
+# 6. Chia dữ liệu 70/20/10 theo USER rồi mới explode
 # ======================
-def split_and_save(df, save_dir="data"):
+def split_and_save(df, save_dir="data", seed=42):
     os.makedirs(save_dir, exist_ok=True)
 
-    # train 70%, temp 30%
-    train_df, temp_df = train_test_split(
+    # ⚠️ split theo user-level (mỗi dòng = 1 user)
+    train_users, temp_users = train_test_split(
         df,
         test_size=0.3,
-        random_state=42,
-        stratify=df[["mbti_IE","mbti_NS","mbti_TF","mbti_JP"]]
+        random_state=seed,
+        stratify=df["type"]  # stratify theo type gốc
     )
 
-    # valid 20%, test 10% (tỉ lệ trong temp: 2/3 và 1/3)
-    valid_df, test_df = train_test_split(
-        temp_df,
+    valid_users, test_users = train_test_split(
+        temp_users,
         test_size=0.3333,
-        random_state=42,
-        stratify=temp_df[["mbti_IE","mbti_NS","mbti_TF","mbti_JP"]]
+        random_state=seed,
+        stratify=temp_users["type"]
     )
 
-    print("Train:", len(train_df), "Valid:", len(valid_df), "Test:", len(test_df))
+    # Sau khi chia user → explode thành post-level
+    train_df = explode_posts(train_users)
+    valid_df = explode_posts(valid_users)
+    test_df  = explode_posts(test_users)
 
+    print("Users -> Train:", len(train_users), "Valid:", len(valid_users), "Test:", len(test_users))
+    print("Posts -> Train:", len(train_df), "Valid:", len(valid_df), "Test:", len(test_df))
+
+    # Lưu
     train_df.to_csv(os.path.join(save_dir, "train.csv"), index=False)
     valid_df.to_csv(os.path.join(save_dir, "valid.csv"), index=False)
     test_df.to_csv(os.path.join(save_dir, "test.csv"), index=False)
 
     return train_df, valid_df, test_df
 
-if __name__ == "__main__":
-    # 1. Load dữ liệu gốc
-    df = load_data("D:\Progamming\Progamming_courses\Quorsk\project\data\mbti_1.csv")
 
-    # 2. Thêm cột nhãn binary
+if __name__ == "__main__":
+    # ví dụ chạy nhanh (bạn có thể thay path của bạn)
+    df = load_data("D:/Progamming/Progamming_courses/Quorsk/project/data/mbti_1.csv")
     df = add_binary_columns(df)
 
-    # 3. Tách các post ra từng dòng
-    df_expanded = explode_posts(df)
-
-    # 4. Vẽ phân phối nhãn MBTI
+    # 👇 không explode ở đây, chỉ plot trên user-level
     plot_distribution(df, col="type")
-    plot_distribution(df_expanded, col="mbti_IE")
 
-    # 5. Chia và lưu ra train/valid/test
-    train_df, valid_df, test_df = split_and_save(df_expanded, save_dir="data")
+    # Split theo user rồi mới explode
+    train_df, valid_df, test_df = split_and_save(df, save_dir="data")
 
+    # visualize phân phối sau khi explode
+    plot_distribution(train_df, col="mbti_IE")
     print("✅ Đã lưu xong train.csv, valid.csv, test.csv trong thư mục /data/")
+
