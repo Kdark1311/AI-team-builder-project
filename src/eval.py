@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ from torch.utils.data import DataLoader
 from transformers import BertTokenizer
 
 from models import MBTIModel
-from data import MBTIDataset, load_data, add_binary_columns, explode_posts, split_and_save, set_seed
+from data import MBTIDataset, load_data, add_binary_columns, split_and_save, set_seed
 
 # ======================
 # Evaluation core
@@ -43,7 +44,7 @@ def evaluate(model, dataloader, device):
 # ======================
 # Visualization
 # ======================
-def plot_confusion_matrices(y_true, y_pred, axes=["IE", "NS", "TF", "JP"], save_dir=None):
+def plot_confusion_matrices(y_true, y_pred, axes, save_dir=None):
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
     axs = axs.ravel()
 
@@ -65,7 +66,7 @@ def plot_confusion_matrices(y_true, y_pred, axes=["IE", "NS", "TF", "JP"], save_
         plt.show()
 
 
-def plot_probability_distribution(probs, axes=["IE", "NS", "TF", "JP"], save_dir=None):
+def plot_probability_distribution(probs, axes, save_dir=None):
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
     axs = axs.ravel()
 
@@ -89,7 +90,7 @@ def plot_probability_distribution(probs, axes=["IE", "NS", "TF", "JP"], save_dir
 # ======================
 # Error analysis
 # ======================
-def error_analysis(test_df, y_true, y_pred, y_probs, axes=["IE", "NS", "TF", "JP"], n_samples=15):
+def error_analysis(test_df, y_true, y_pred, y_probs, axes, n_samples=15):
     errors = []
     for i in range(len(y_true)):
         for j, axis in enumerate(axes):
@@ -149,10 +150,12 @@ def main():
     seed = 42
     set_seed(seed)
 
-    model_name = "bert-base-uncased"
-    batch_size = 16
-    max_len = 256
-    model_path = os.path.join("checkpoints", "mbti_model.pt")
+    # Load config.json (training params)
+    config = json.load(open(os.path.join("checkpoints", "config.json")))
+    model_name = config["model_name"]
+    batch_size = config["batch_size"]
+    max_len = config["max_len"]
+    model_path = os.path.join("checkpoints", config["save_path"])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
@@ -160,8 +163,7 @@ def main():
     # Load data
     df = load_data("data/mbti.csv")
     df = add_binary_columns(df)
-    df = explode_posts(df)
-    _, _, test_df = split_and_save(df, save_dir="data", seed=seed)
+    _, _, test_df = split_and_save(df, save_dir="data", seed=seed)  # split user-level
 
     tokenizer = BertTokenizer.from_pretrained(model_name)
     test_dataset = MBTIDataset(test_df, tokenizer, max_len=max_len)
@@ -190,8 +192,12 @@ def main():
     metrics_df.to_csv("reports/metrics.csv")
     print("\n✅ Metrics saved to reports/metrics.csv")
 
-    print("\n=== Classification Report (all axes) ===")
-    print(classification_report(y_true, y_pred, target_names=axes))
+    # Save classification report
+    report = classification_report(
+    y_true, y_pred, output_dict=True, zero_division=0
+)
+    pd.DataFrame(report).to_csv("reports/classification_report.csv")
+    print("✅ Classification report saved to reports/classification_report.csv")
 
     # Visualization
     plot_confusion_matrices(y_true, y_pred, axes, save_dir="reports/figures")
@@ -207,3 +213,4 @@ def main():
 if __name__ == "__main__":
     os.makedirs("reports", exist_ok=True)
     main()
+    

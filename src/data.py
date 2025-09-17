@@ -53,7 +53,7 @@ def explode_posts(df):
     for _, row in df.iterrows():
         posts = str(row.get("posts", "")).replace("|||", "///").split("///")
         for p in posts:
-            p = p.strip()
+            p = clean_text(p)   # 👈 thêm bước làm sạch
             if len(p) > 0:
                 rows.append({
                     "post": p,
