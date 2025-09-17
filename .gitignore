@@ -65,8 +65,7 @@ env.bak/
 venv.bak/
 
 # Data files (dataset)
-data/*.csv
-data/*.zip
+
 
 # Model weights / checkpoints
 checkpoints/
