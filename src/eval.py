@@ -1,3 +1,6 @@
+# ======================
+# Evaluation
+# ======================
 import os
 import json
 import torch
@@ -10,12 +13,9 @@ from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, classifi
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer
 
-from models import MBTIModel
-from data import MBTIDataset, load_data, add_binary_columns, split_and_save, set_seed
-
-# ======================
-# Evaluation core
-# ======================
+# ----------------------
+# Core evaluation
+# ----------------------
 def evaluate(model, dataloader, device):
     model.eval()
     all_labels, all_preds, all_probs = [], [], []
@@ -40,10 +40,9 @@ def evaluate(model, dataloader, device):
         np.vstack(all_probs)
     )
 
-
-# ======================
-# Visualization
-# ======================
+# ----------------------
+# Confusion matrices
+# ----------------------
 def plot_confusion_matrices(y_true, y_pred, axes, save_dir=None):
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
     axs = axs.ravel()
@@ -61,11 +60,13 @@ def plot_confusion_matrices(y_true, y_pred, axes, save_dir=None):
         path = os.path.join(save_dir, "confusion_matrices.png")
         plt.savefig(path)
         plt.close()
-        print(f"Saved confusion matrix to {path}")
+        print(f"✅ Saved confusion matrix to {path}")
     else:
         plt.show()
 
-
+# ----------------------
+# Probability distribution
+# ----------------------
 def plot_probability_distribution(probs, axes, save_dir=None):
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
     axs = axs.ravel()
@@ -82,14 +83,13 @@ def plot_probability_distribution(probs, axes, save_dir=None):
         path = os.path.join(save_dir, "prob_dist.png")
         plt.savefig(path)
         plt.close()
-        print(f"Saved probability distribution to {path}")
+        print(f"✅ Saved probability distribution to {path}")
     else:
         plt.show()
 
-
-# ======================
+# ----------------------
 # Error analysis
-# ======================
+# ----------------------
 def error_analysis(test_df, y_true, y_pred, y_probs, axes, n_samples=15):
     errors = []
     for i in range(len(y_true)):
@@ -101,7 +101,7 @@ def error_analysis(test_df, y_true, y_pred, y_probs, axes, n_samples=15):
                     "true": int(y_true[i, j]),
                     "pred": int(y_pred[i, j]),
                     "prob": float(y_probs[i, j]),
-                    "text": test_df.iloc[i]["post"][:200] + "..."
+                    "text": str(test_df.iloc[i]["posts"])[:200] + "..."
                 })
 
     errors_df = pd.DataFrame(errors)
@@ -113,64 +113,30 @@ def error_analysis(test_df, y_true, y_pred, y_probs, axes, n_samples=15):
         print("\n=== Sample Errors ===")
         print(errors_df.sample(min(n_samples, len(errors_df))))
 
-
-# ======================
-# Robustness test
-# ======================
-def robustness_test(df, model, tokenizer, device, batch_size, max_len, axes):
-    results = []
-    for n_posts in [50, 10, 1]:
-        print(f"\n⚡ Robustness Test: Using {n_posts} posts per user")
-        df_sub = df.copy()
-        df_sub["post"] = df_sub["post"].apply(lambda x: " ".join(x.split()[:n_posts]))
-
-        test_dataset = MBTIDataset(df_sub, tokenizer, max_len=max_len)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size)
-
-        y_true, y_pred, _ = evaluate(model, test_loader, device)
-
-        row = {"n_posts": n_posts}
-        for i, axis in enumerate(axes):
-            row[f"{axis}_Acc"] = accuracy_score(y_true[:, i], y_pred[:, i])
-            row[f"{axis}_F1"] = f1_score(y_true[:, i], y_pred[:, i], average="macro")
-        results.append(row)
-
-    results_df = pd.DataFrame(results)
-    os.makedirs("reports", exist_ok=True)
-    results_df.to_csv("reports/robustness.csv", index=False)
-    print("\n✅ Robustness results saved to reports/robustness.csv")
-    print(results_df)
-
-
-# ======================
+# ----------------------
 # Main
-# ======================
+# ----------------------
 def main():
-    # Config
-    seed = 42
-    set_seed(seed)
 
-    # Load config.json (training params)
-    config = json.load(open(os.path.join("checkpoints", "config.json")))
-    model_name = config["model_name"]
-    batch_size = config["batch_size"]
-    max_len = config["max_len"]
-    model_path = os.path.join("checkpoints", config["save_path"])
+    # Config
+    set_seed(42)
+    model_name = "bert-base-uncased"
+    batch_size = 8
+    max_len = 256
+    model_path = "/kaggle/working/mbti_best.pt"
+    test_csv = "/kaggle/working/test.csv"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
 
-    # Load data
-    df = load_data("data/mbti.csv")
-    df = add_binary_columns(df)
-    _, _, test_df = split_and_save(df, save_dir="data", seed=seed)  # split user-level
-
+    # Load test set
+    test_df = pd.read_csv(test_csv)
     tokenizer = BertTokenizer.from_pretrained(model_name)
     test_dataset = MBTIDataset(test_df, tokenizer, max_len=max_len)
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
     # Load model
-    model = MBTIModel(model_name=model_name)
+    model = MBTIModel(model_name=model_name, pooling="cls+mean", dropout=0.4)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
 
@@ -192,10 +158,10 @@ def main():
     metrics_df.to_csv("reports/metrics.csv")
     print("\n✅ Metrics saved to reports/metrics.csv")
 
-    # Save classification report
+    # Save classification report (multi-label)
     report = classification_report(
-    y_true, y_pred, output_dict=True, zero_division=0
-)
+        y_true, y_pred, output_dict=True, zero_division=0
+    )
     pd.DataFrame(report).to_csv("reports/classification_report.csv")
     print("✅ Classification report saved to reports/classification_report.csv")
 
@@ -206,11 +172,7 @@ def main():
     # Error analysis
     error_analysis(test_df, y_true, y_pred, y_probs, axes)
 
-    # Robustness test
-    robustness_test(test_df, model, tokenizer, device, batch_size, max_len, axes)
-
 
 if __name__ == "__main__":
     os.makedirs("reports", exist_ok=True)
     main()
-    

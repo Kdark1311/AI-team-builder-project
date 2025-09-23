@@ -3,29 +3,29 @@ import torch.nn as nn
 from transformers import BertModel
 
 class MBTIModel(nn.Module):
-    def __init__(self, model_name="bert-base-uncased", dropout=0.3, use_hidden_layer=True, freeze_bert=False):
+    def __init__(self, model_name="bert-base-uncased", dropout=0.4,
+                 use_hidden_layer=True, pooling="cls+mean"):
         super(MBTIModel, self).__init__()
-        # Load pretrained BERT
+
+        # Load full BERT (không freeze)
         self.bert = BertModel.from_pretrained(model_name)
-        hidden_size = self.bert.config.hidden_size  # thường là 768
+        hidden_size = self.bert.config.hidden_size
 
-        if freeze_bert:
-            for param in self.bert.parameters():
-                param.requires_grad = False
-
+        self.pooling = pooling
         self.dropout = nn.Dropout(dropout)
 
+        input_dim = hidden_size * 2 if pooling == "cls+mean" else hidden_size
+
         if use_hidden_layer:
-            # Classifier "sâu" hơn để tăng khả năng học
             self.classifier = nn.Sequential(
-                nn.Linear(hidden_size, hidden_size // 2),
-                nn.ReLU(),
+                nn.Linear(input_dim, input_dim // 2),
+                nn.BatchNorm1d(input_dim // 2),
+                nn.GELU(),
                 nn.Dropout(dropout),
-                nn.Linear(hidden_size // 2, 4)
+                nn.Linear(input_dim // 2, 4)
             )
         else:
-            # Classifier đơn giản
-            self.classifier = nn.Linear(hidden_size, 4)
+            self.classifier = nn.Linear(input_dim, 4)
 
     def forward(self, input_ids, attention_mask):
         outputs = self.bert(
@@ -34,10 +34,25 @@ class MBTIModel(nn.Module):
             return_dict=True
         )
 
-        # Lấy CLS embedding trực tiếp (ổn định hơn pooler_output)
-        cls_embedding = outputs.last_hidden_state[:, 0, :]  # (batch, hidden_size)
+        if self.pooling == "cls":
+            pooled = outputs.last_hidden_state[:, 0, :]
+        elif self.pooling == "mean":
+            pooled = (outputs.last_hidden_state * attention_mask.unsqueeze(-1)).sum(1)
+            pooled = pooled / attention_mask.sum(1, keepdim=True)
+        elif self.pooling == "max":
+            masked = outputs.last_hidden_state.masked_fill(
+                attention_mask.unsqueeze(-1) == 0, -1e9
+            )
+            pooled = masked.max(1).values
+        elif self.pooling == "cls+mean":
+            cls_emb = outputs.last_hidden_state[:, 0, :]
+            mean_emb = (outputs.last_hidden_state * attention_mask.unsqueeze(-1)).sum(1)
+            mean_emb = mean_emb / attention_mask.sum(1, keepdim=True)
+            pooled = torch.cat([cls_emb, mean_emb], dim=1)
+        else:
+            raise ValueError(f"Unknown pooling: {self.pooling}")
 
-        x = self.dropout(cls_embedding)
+        x = self.dropout(pooled)
         logits = self.classifier(x)
 
         return logits

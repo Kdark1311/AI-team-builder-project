@@ -1,26 +1,16 @@
+# src/data.py
 import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
-import seaborn as sns
-import os
-import random
 import re
-def set_seed(seed=42):
-    import random, numpy as _np, torch as _torch
-    random.seed(seed)
-    _np.random.seed(seed)
-    _torch.manual_seed(seed)
-    if _torch.cuda.is_available():
-        _torch.cuda.manual_seed_all(seed)
+import matplotlib.pyplot as plt
 
 # ======================
 # 1. Load & inspect data
 # ======================
 def load_data(path):
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, on_bad_lines="skip", engine="python")
     print("Số mẫu:", len(df))
     print("Số loại MBTI khác nhau:", df["type"].nunique())
     print(df["type"].value_counts())
@@ -46,42 +36,17 @@ def add_binary_columns(df):
     return df
 
 # ======================
-# 3. Tách posts theo dấu /// hoặc |||
+# 3. Làm sạch văn bản
 # ======================
-def explode_posts(df):
-    rows = []
-    for _, row in df.iterrows():
-        posts = str(row.get("posts", "")).replace("|||", "///").split("///")
-        for p in posts:
-            p = clean_text(p)   # 👈 thêm bước làm sạch
-            if len(p) > 0:
-                rows.append({
-                    "post": p,
-                    "mbti_IE": row["mbti_IE"],
-                    "mbti_NS": row["mbti_NS"],
-                    "mbti_TF": row["mbti_TF"],
-                    "mbti_JP": row["mbti_JP"],
-                })
-    return pd.DataFrame(rows)
-#làm sạch văn bản
 def clean_text(text: str) -> str:
     text = str(text)
-
-    # 1. Bỏ link (http, https, www)
-    text = re.sub(r"http\S+|www\.\S+", " ", text)
-
-    # 2. Bỏ emoji dạng :smile: hoặc :blushed:
-    text = re.sub(r":\w+:", " ", text)
-
-    # 3. Bỏ ký tự không phải chữ, số, dấu câu cơ bản
-    text = re.sub(r"[^a-zA-Z0-9\s.,!?']", " ", text)
-
-    # 4. Gom nhiều khoảng trắng thành 1
-    text = re.sub(r"\s+", " ", text).strip()
-
+    text = re.sub(r"http\S+|www\.\S+", " ", text)             # bỏ link
+    text = re.sub(r"[^a-zA-Z0-9\s.,!?']", " ", text)          # bỏ ký tự lạ
+    text = re.sub(r"\s+", " ", text).strip()                  # gom khoảng trắng
     return text
+
 # ======================
-# 6. Dataset class cho BERT
+# 4. Dataset class cho BERT
 # ======================
 class MBTIDataset(Dataset):
     def __init__(self, df, tokenizer, max_len=256, augment_fn=None):
@@ -95,10 +60,13 @@ class MBTIDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        text = row["post"]
+        text = clean_text(row.get("posts", ""))  # 👈 giữ nguyên toàn bộ posts của user
 
         if self.augment_fn:
-            text = self.augment_fn(text)
+            try:
+                text = self.augment_fn(text)
+            except:
+                pass
 
         labels = torch.tensor(
             [row["mbti_IE"], row["mbti_NS"], row["mbti_TF"], row["mbti_JP"]],
@@ -120,70 +88,28 @@ class MBTIDataset(Dataset):
         }
 
 # ======================
-# 5. Visualization helpers
+# 5. Chạy trực tiếp để tiền xử lý & lưu
 # ======================
-def plot_distribution(df, col="type", save_path=None):
-    plt.figure(figsize=(10,5))
-    sns.countplot(data=df, x=col, order=df[col].value_counts().index)
-    plt.xticks(rotation=90)
-    plt.title(f"Distribution of {col}")
-    if save_path:
-        plt.tight_layout()
-        plt.savefig(save_path)
-        plt.close()
-    else:
-        plt.tight_layout()
-        plt.show()
-
-# ======================
-# 6. Chia dữ liệu 70/20/10 theo USER rồi mới explode
-# ======================
-def split_and_save(df, save_dir="data", seed=42):
-    os.makedirs(save_dir, exist_ok=True)
-
-    # ⚠️ split theo user-level (mỗi dòng = 1 user)
-    train_users, temp_users = train_test_split(
-        df,
-        test_size=0.3,
-        random_state=seed,
-        stratify=df["type"]  # stratify theo type gốc
-    )
-
-    valid_users, test_users = train_test_split(
-        temp_users,
-        test_size=0.3333,
-        random_state=seed,
-        stratify=temp_users["type"]
-    )
-
-    # Sau khi chia user → explode thành post-level
-    train_df = explode_posts(train_users)
-    valid_df = explode_posts(valid_users)
-    test_df  = explode_posts(test_users)
-
-    print("Users -> Train:", len(train_users), "Valid:", len(valid_users), "Test:", len(test_users))
-    print("Posts -> Train:", len(train_df), "Valid:", len(valid_df), "Test:", len(test_df))
-
-    # Lưu
-    train_df.to_csv(os.path.join(save_dir, "train.csv"), index=False)
-    valid_df.to_csv(os.path.join(save_dir, "valid.csv"), index=False)
-    test_df.to_csv(os.path.join(save_dir, "test.csv"), index=False)
-
-    return train_df, valid_df, test_df
-
-
 if __name__ == "__main__":
-    # ví dụ chạy nhanh (bạn có thể thay path của bạn)
-    df = load_data("D:/Progamming/Progamming_courses/Quorsk/project/data/mbti_1.csv")
+    df = load_data("/kaggle/input/mbti-type/mbti_1.csv")
     df = add_binary_columns(df)
+    df["posts"] = df["posts"].apply(clean_text)   # làm sạch toàn bộ posts (không explode)
+    df.to_csv("/kaggle/working/mbti_clean.csv", index=False)
+    print("✅ Đã lưu xong mbti_clean.csv (giữ nguyên 1 dòng/user, có 4 nhãn binary)")
+    
+    
+    label_cols = ["mbti_IE", "mbti_NS", "mbti_TF", "mbti_JP"]
 
-    # 👇 không explode ở đây, chỉ plot trên user-level
-    plot_distribution(df, col="type")
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    axes = axes.flatten()
 
-    # Split theo user rồi mới explode
-    train_df, valid_df, test_df = split_and_save(df, save_dir="data")
+    for i, col in enumerate(label_cols):
+        counts = df[col].value_counts().sort_index()  # 0 và 1
+        counts.plot(kind="bar", ax=axes[i])
+        axes[i].set_title(f"Phân phối nhãn {col}")
+        axes[i].set_xticklabels(["0", "1"], rotation=0)
+        for idx, val in enumerate(counts):
+            axes[i].text(idx, val, str(val), ha="center", va="bottom")
 
-    # visualize phân phối sau khi explode
-    plot_distribution(train_df, col="mbti_IE")
-    print("✅ Đã lưu xong train.csv, valid.csv, test.csv trong thư mục /data/")
-
+    plt.tight_layout()
+    plt.show()

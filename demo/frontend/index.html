@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MBTI App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <h2 class="logo">MBTI App</h2>
+
+      <div class="section">
+        <h3>Bài báo liên quan</h3>
+        <ul>
+          <li><a href="https://www.16personalities.com" target="_blank">Giới thiệu MBTI</a></li>
+          <li><a href="https://www.truity.com/page/16-personality-types-myers-briggs" target="_blank">16 loại MBTI</a></li>
+          <li><a href="https://www.psychologytoday.com/us/basics/mbti" target="_blank">MBTI & tâm lý</a></li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h3>Thông tin thêm</h3>
+        <p>
+          MBTI phân tích tính cách qua 4 cặp đối lập:  
+          <br>- Hướng nội (I) / Hướng ngoại (E)  
+          <br>- Cảm nhận (S) / Trực giác (N)  
+          <br>- Lý trí (T) / Cảm xúc (F)  
+          <br>- Nguyên tắc (J) / Linh hoạt (P)  
+        </p>
+      </div>
+    </aside>
+
+    <!-- Nội dung chính -->
+    <main class="main-content">
+      <h1>Ứng dụng MBTI</h1>
+
+      <div class="card">
+        <h2>Nhập văn bản</h2>
+        <textarea id="userInput" placeholder="Nhập văn bản của bạn..."></textarea>
+        <button id="analyzeBtn">Phân tích</button>
+      </div>
+
+      <div class="card">
+        <h2>Kết quả MBTI</h2>
+        <p id="result">Chưa có kết quả</p>
+      </div>
+
+      <div class="card">
+        <h2>Gợi ý vị trí trong team</h2>
+        <p id="suggestion">Chưa có gợi ý</p>
+      </div>
+
+      <div class="card">
+        <h2>Giải thích</h2>
+        <p id="explanation">Chưa có giải thích</p>
+      </div>
+    </main>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
