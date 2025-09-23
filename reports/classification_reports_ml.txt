@@ -1,0 +1,52 @@
+
+===== IE =====
+Acc: 0.8398, F1: 0.7788
+              precision    recall  f1-score   support
+
+           0       0.90      0.89      0.89      1335
+           1       0.64      0.68      0.66       400
+
+    accuracy                           0.84      1735
+   macro avg       0.77      0.78      0.78      1735
+weighted avg       0.84      0.84      0.84      1735
+
+
+
+===== NS =====
+Acc: 0.8865, F1: 0.7912
+              precision    recall  f1-score   support
+
+           0       0.96      0.91      0.93      1496
+           1       0.56      0.77      0.65       239
+
+    accuracy                           0.89      1735
+   macro avg       0.76      0.84      0.79      1735
+weighted avg       0.91      0.89      0.89      1735
+
+
+
+===== TF =====
+Acc: 0.8444, F1: 0.8440
+              precision    recall  f1-score   support
+
+           0       0.81      0.86      0.84       796
+           1       0.88      0.83      0.85       939
+
+    accuracy                           0.84      1735
+   macro avg       0.84      0.85      0.84      1735
+weighted avg       0.85      0.84      0.84      1735
+
+
+
+===== JP =====
+Acc: 0.8086, F1: 0.7993
+              precision    recall  f1-score   support
+
+           0       0.76      0.75      0.76       686
+           1       0.84      0.85      0.84      1049
+
+    accuracy                           0.81      1735
+   macro avg       0.80      0.80      0.80      1735
+weighted avg       0.81      0.81      0.81      1735
+
+

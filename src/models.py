@@ -5,17 +5,18 @@ from transformers import BertModel
 class MBTIModel(nn.Module):
     def __init__(self, model_name="bert-base-uncased", dropout=0.4,
                  use_hidden_layer=True, pooling="cls+mean"):
-        super(MBTIModel, self).__init__()
-
-        # Load full BERT (không freeze)
+        super().__init__()
+        # --- Load BERT ---
         self.bert = BertModel.from_pretrained(model_name)
         hidden_size = self.bert.config.hidden_size
 
         self.pooling = pooling
         self.dropout = nn.Dropout(dropout)
 
+        # Input dim cho classifier
         input_dim = hidden_size * 2 if pooling == "cls+mean" else hidden_size
 
+        # Classifier (có hidden layer hoặc không)
         if use_hidden_layer:
             self.classifier = nn.Sequential(
                 nn.Linear(input_dim, input_dim // 2),
@@ -28,21 +29,17 @@ class MBTIModel(nn.Module):
             self.classifier = nn.Linear(input_dim, 4)
 
     def forward(self, input_ids, attention_mask):
-        outputs = self.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            return_dict=True
-        )
+        # --- BERT outputs ---
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, return_dict=True)
 
+        # --- Pooling ---
         if self.pooling == "cls":
             pooled = outputs.last_hidden_state[:, 0, :]
         elif self.pooling == "mean":
             pooled = (outputs.last_hidden_state * attention_mask.unsqueeze(-1)).sum(1)
             pooled = pooled / attention_mask.sum(1, keepdim=True)
         elif self.pooling == "max":
-            masked = outputs.last_hidden_state.masked_fill(
-                attention_mask.unsqueeze(-1) == 0, -1e9
-            )
+            masked = outputs.last_hidden_state.masked_fill(attention_mask.unsqueeze(-1) == 0, -1e9)
             pooled = masked.max(1).values
         elif self.pooling == "cls+mean":
             cls_emb = outputs.last_hidden_state[:, 0, :]
@@ -52,7 +49,6 @@ class MBTIModel(nn.Module):
         else:
             raise ValueError(f"Unknown pooling: {self.pooling}")
 
-        x = self.dropout(pooled)
-        logits = self.classifier(x)
-
+        # --- Dropout + Classifier ---
+        logits = self.classifier(self.dropout(pooled))
         return logits
