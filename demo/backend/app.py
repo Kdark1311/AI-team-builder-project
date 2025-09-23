@@ -6,7 +6,7 @@ import os
 sys.path.append(r"D:\Progamming\Progamming_courses\Quorsk\project\src")
 from models import MBTIModel
 
-MODEL_PATH = r"C:\Users\Nguyen Thi Thuy\Downloads\mbti_best.pt"
+MODEL_PATH = r"D:\Progamming\Progamming_courses\Quorsk\project\reports\BERT_report\mbti_best.pt"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
